@@ -1,4 +1,3 @@
-// ILikeBanas
 
 #include "FIUSATSActor.h"
 #include "util/Logging.h"
@@ -8,14 +7,15 @@
 #include <winsock2.h>
 #include <Ws2tcpip.h>
 #include <stdio.h>
+#include <future>
 //#include "player/PlayerUtility.h"
-#include "Socket.h"
+//#include "Socket.h"
 
 #pragma comment(lib, "ws2_32.lib")
-SOCKET sock;
+SOCKET sock1;
 using namespace std;
 
-Socket factory;
+//Socket factory;
 // Sets default values
 AFIUSATSActor::AFIUSATSActor()
 {
@@ -25,7 +25,7 @@ AFIUSATSActor::AFIUSATSActor()
 }
 
 // Called when the game starts or when spawned
-void AFIUSATSActor::BeginPlay()
+/*void AFIUSATSActor::BeginPlay()
 {
 	Super::BeginPlay();
 	
@@ -35,8 +35,7 @@ void AFIUSATSActor::BeginPlay()
 void AFIUSATSActor::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-
-}
+}*/
 
 bool AFIUSATSActor::IniWin() 
 {
@@ -59,7 +58,7 @@ bool AFIUSATSActor::IniWin()
 
 bool AFIUSATSActor::ConnectTCP(FString ip, int port, int &output) {
 	output = 20;
-	sock = socket(AF_INET, SOCK_STREAM, 0);
+	sock1 = socket(AF_INET, SOCK_STREAM, 0);
 	bool Connect(const FInternetAddr & ip);
 	//string ipAdress = "192.168.178.53";
 	sockaddr_in hint;
@@ -68,9 +67,9 @@ bool AFIUSATSActor::ConnectTCP(FString ip, int port, int &output) {
 	std::string w(TCHAR_TO_UTF8(*ip));
 	inet_pton(AF_INET, w.c_str(), &hint.sin_addr);
 
-	int connResult = connect(sock, (sockaddr*)&hint, sizeof(hint));
+	int connResult = connect(sock1, (sockaddr*)&hint, sizeof(hint));
 	if (connResult == SOCKET_ERROR) {
-		closesocket(sock);
+		closesocket(sock1);
 		WSACleanup();
 
 		//SML::Logging::info("[FIUSATS] - Can't connect to: ");
@@ -84,7 +83,7 @@ bool AFIUSATSActor::ConnectTCP(FString ip, int port, int &output) {
 }
 
 void AFIUSATSActor::CreateSocket(bool &result) {
-	if (sock != INVALID_SOCKET) {
+	if (sock1 != INVALID_SOCKET) {
 		result = true;
 	}
 	else {
@@ -92,9 +91,32 @@ void AFIUSATSActor::CreateSocket(bool &result) {
 	}
 }
 
+void SetData(STGetData *wt) {
+	char buf[100];
+	bool sent = AFIUSATSActor::Sending(*wt->string, *wt->leng);
+	if (sent == true) {
+		int result = recv(sock1, buf, sizeof(buf), 0);
+		wt->data = new FString(std::string(buf, 0, result).c_str());
+	}
+}
+
+void AFIUSATSActor::MultiSending(FString string, int32 leng, FString &data) {
+	STGetData wt = {};
+	wt.data = &data;
+	wt.leng = &leng;
+	wt.string = &string;
+	bool f = false;
+	std::future<void> w = std::async(&SetData, &wt);
+	w.wait();
+	//SetData(&wt);
+	data = *wt.data;
+	delete wt.data;
+	//auto a = async(&GetData, string, leng, data);
+}
+
 bool AFIUSATSActor::Sending(FString string, int32 leng) {
 	std::string sendString = std::string(TCHAR_TO_UTF8(*string));
-	int sent = send(sock, sendString.c_str(), leng, 0);
+	int sent = send(sock1, sendString.c_str(), leng, 0);
 	if (sent != SOCKET_ERROR) {
 		//SML::Logging::info("[FIUSATS] - String sent!");
 		return true;
@@ -109,20 +131,21 @@ void  AFIUSATSActor::GetData(FString string, int32 leng, FString &data) {
 	char buf[100];
 	bool sent = Sending(string, leng);
 	if (sent == true) {
-		int result = recv(sock, buf, sizeof(buf), 0);
+		int result = recv(sock1, buf, sizeof(buf), 0);
 		data = std::string(buf, 0, result).c_str();
+		//return data;
 	}
 }
 
 void AFIUSATSActor::Disconnect() {
-	closesocket(sock);
-	if (sock) {
+	closesocket(sock1);
+	if (sock1) {
 		//SML::Logging::info("[FIUSATS] - Socket is still there");
 	}
 	else {
 		//SML::Logging::info("[FIUSATS] - Socket is not there");
 	}
-	sock = 0;
+	sock1 = 0;
 	WSACleanup();
 }
 

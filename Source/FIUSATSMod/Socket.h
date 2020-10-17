@@ -1,5 +1,3 @@
-// ILikeBanas
-
 #include "util/Logging.h"
 #include <iostream>
 #include <WS2tcpip.h>
