@@ -11,6 +11,7 @@
 #include <future>
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
+#include "Kismet/KismetSystemLibrary.h" 
 #include "FGLocalPlayer.h"
 
 
@@ -18,23 +19,74 @@
 SOCKET sock;
 using namespace std;
 
+//Create UserStruct
+void AFIUSATSCommunicator::Server_CreateUserStruct_Implementation (){
+    UserStruct.Empty();
+    for (int i = 0; i< 4; i++){
+        APlayerController *tempPc = UGameplayStatics::GetPlayerController(GetWorld(), i);
+        AFGPlayerController* player = Cast<AFGPlayerController>(tempPc);
+        
+        if(player)
+            {
+                UserStructN.ID = i;
+                UserStructN.Username = player->GetPlayerState<APlayerState>()->GetPlayerName();
+                UserStructN.UserEpicID = mEpicId;
+                UserStructN.UserSteamID = mSteamId;
+                if(i == 0){ UserStructN.IsHoster = true; }
+                else{ UserStructN.IsHoster = false; }
+                UserStruct.Add(UserStructN);
+            }
+        }
+    
+}
+
+bool AFIUSATSCommunicator::Server_CreateUserStruct_Validate() {
+
+    return true;
+    
+}
+//End Create UserStruct
+
 void AFIUSATSCommunicator::BeginPlay() {
-
+    
 	Super::BeginPlay();
-
-	APlayerController *tempPc = UGameplayStatics::GetPlayerController(GetWorld(), 0);
-	AFGPlayerController* pc = Cast<AFGPlayerController>(tempPc);
+    //Usernames.Add(TEXT("Test"));
+    //Usernames.Add(TEXT("Test1"));
+	
+	
 	//APlayerState* pcstate = Cast<APlayerState>(pc);
-	mEpicSteamId = GetPlayerUserId(pc);
-
-	mName = pc->GetPlayerState<APlayerState>()->GetPlayerName();
-
-	if (IniWin()) {
-		if (CreateSocket()) {
-			ConnectTCP(mIpAdress, mPort);
-			SendStatus();
-		}
-	}
+	APlayerController *tempPc = UGameplayStatics::GetPlayerController(GetWorld(), 0);
+    mPlayerFGController = Cast<AFGPlayerController>(tempPc);
+	
+	mLocalUsername = mPlayerFGController->GetPlayerState<APlayerState>()->GetPlayerName();
+	
+	mEpicSteamId = GetPlayerUserId(mPlayerFGController);
+	//if(mLocalUsername == "") {mLocalUsername = }
+	
+	 if (IniWin()) {
+            if (CreateSocket()) {
+                ConnectTCP(mIpAdress, mPort);
+                if(mIsConnected == true) {
+                    SendStatus(mPlayerFGController);
+                }
+                }
+            }
+    
+	//Server_TCPConnection();
+    
+}
+	
+void AFIUSATSCommunicator::Tick(float DeltaTime) {
+    Super::Tick(DeltaTime);
+    Server_CreateUserStruct();
+    //UserStruct.Empty();
+    //for (int i = 0; i< 4; i++){
+    
+    //    APlayerController *tempPc = UGameplayStatics::GetPlayerController(GetWorld(), i);
+    //    AFGPlayerController* pc = Cast<AFGPlayerController>(tempPc);
+    //    Server_CreateUserStruct(pc);
+    //}
+    
 }
 
 void AFIUSATSCommunicator::EndPlay(const EEndPlayReason::Type endPlayReason) {
@@ -96,23 +148,53 @@ void AFIUSATSCommunicator::ConnectTCP(FString ip, int port) {
 }
 
 void AFIUSATSCommunicator::EndConnection() {
-	SendStatus();
+	SendStatus(mPlayerFGController);
 	closesocket(sock);
 	WSACleanup();
 }
 
-void AFIUSATSCommunicator::SendStatus() {
+//Server Events
+
+//Create Connection
+
+void AFIUSATSCommunicator::Server_TCPConnection_Implementation() {
+    if (IniWin()) {
+        if (CreateSocket()) {
+            ConnectTCP(mIpAdress, mPort);
+            }
+        }
+    SendStatus(mPlayerFGController);
+}
+
+bool AFIUSATSCommunicator::Server_TCPConnection_Validate() {return true;}
+//End Create Connection
+
+//Destroy Connection
+
+void AFIUSATSCommunicator::Server_DestroyConnection_Implementation() {
+    if(UserStruct[0].IsHoster == true){ EndConnection(); }
+}
+
+bool AFIUSATSCommunicator::Server_DestroyConnection_Validate() {return true;}
+//End Destroy Connection
+
+
+
+void AFIUSATSCommunicator::SendStatus(AFGPlayerController* player) {
+    
 	std::string sendString;
 	if (mUsername != "") {
 		if (mUserStatus) {
 			sendString.append("0;");
-			sendString.append(std::string(TCHAR_TO_UTF8(*mUsername)));
 		}
 		else {
 			sendString.append("1;");
-			sendString.append(std::string(TCHAR_TO_UTF8(*mUsername)));
 		}
-	
+		string localUsername = std::string(TCHAR_TO_UTF8(*mLocalUsername));
+		string localUserLength = to_string(sizeof(localUsername));
+	    sendString.append(localUsername);
+	    sendString.append(";");
+	    
 		int sent = send(sock, sendString.c_str(), sizeof(sendString), 0);
 		if (sent != SOCKET_ERROR) {
 			SML::Logging::info("[FIUSATS] - User is now Online");
@@ -132,6 +214,8 @@ void AFIUSATSCommunicator::SetUsername(FString username) {
 FString AFIUSATSCommunicator::GetPlayerUserId(AFGPlayerController* playerController) {
 
 	FString IDToUseStr;
+	
+	
 	if (playerController) {
 		UFGLocalPlayer* player = Cast<UFGLocalPlayer>(playerController->GetLocalPlayer());
 
@@ -139,7 +223,7 @@ FString AFIUSATSCommunicator::GetPlayerUserId(AFGPlayerController* playerControl
 			TSharedPtr<const FUniqueNetId> EpicID = player->GetPlayerId();
 			TSharedPtr<const FUniqueNetId> SteamID = player->GetPlayerIdSteam();
 
-			TSharedPtr<const FUniqueNetId> IDToUse = (EpicID) ? EpicID : SteamID;
+			//TSharedPtr<const FUniqueNetId> IDToUse = (EpicID) ? EpicID : SteamID;
 
 			if (EpicID && SteamID || EpicID || SteamID) {
 				if (EpicID && SteamID) {
@@ -155,23 +239,29 @@ FString AFIUSATSCommunicator::GetPlayerUserId(AFGPlayerController* playerControl
 					std::string Steam = "Undefined";
 					mSteamId = UTF8_TO_TCHAR(Steam.c_str());
 				}
-				if (!EpicID && SteamID) {
+				if (SteamID && !EpicID) {
 					std::string REpicID = "Undefined";
 					mEpicId = UTF8_TO_TCHAR(REpicID.c_str());
 					mSteamId = SteamID->ToString();
 				}
 				
 			}
-
-			IDToUseStr = IDToUse->ToString();
+            else
+            {
+                std::string REpicID = "Offline";
+                mEpicId = UTF8_TO_TCHAR(REpicID.c_str());
+                std::string Steam = "Offline";
+                mSteamId = UTF8_TO_TCHAR(Steam.c_str());
+            }
+			//IDToUseStr = IDToUse->ToString();
 
 		}
 	}
 	else {
 		// Testing stuff
-		IDToUseStr = "123456789";
+		//IDToUseStr = "123456789";
 	}
-
+	
 	return IDToUseStr;
 }
 
